@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Account, Client, Slot } from '../types';
-import { Trash2, MessageSquare, ChevronDown, ChevronUp, UserPlus, Calendar, AlertTriangle, ShieldCheck, Copy, ExternalLink, RotateCw } from 'lucide-react';
+import { Trash2, MessageSquare, ChevronDown, ChevronUp, UserPlus, AlertTriangle, ShieldCheck, Copy, Lock, Calendar } from 'lucide-react';
 import { draftRenewalMessage } from '../services/geminiService';
 
 interface Props {
@@ -9,6 +9,144 @@ interface Props {
   onUpdateAccount: (account: Account) => void;
   onDeleteAccount: (id: string) => void;
 }
+
+const AccountCard: React.FC<{
+  account: Account;
+  clients: Client[];
+  isExpanded: boolean;
+  onToggle: () => void;
+  onDelete: () => void;
+  onUpdateSlot: (slotId: string, updates: Partial<Slot>) => void;
+  onDraftMsg: (client: Client, expiry: string) => void;
+  onQuickRenew: (slotId: string, months: number) => void;
+}> = ({ account, clients, isExpanded, onToggle, onDelete, onUpdateSlot, onDraftMsg, onQuickRenew }) => {
+    
+    const usedSlots = account.slots.filter(s => s.status !== 'empty').length;
+    const isMasterExpired = account.status === 'expired';
+
+    return (
+        <div className="glass-card rounded-2xl overflow-hidden transition-all duration-300 hover:border-primary/30 group">
+             {/* Header */}
+             <div 
+                onClick={onToggle}
+                className="p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 cursor-pointer"
+             >
+                <div className="flex items-center gap-4">
+                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl font-bold transition-colors ${isMasterExpired ? 'bg-red-500/10 text-red-500' : 'bg-primary/10 text-primary'}`}>
+                        {account.serviceName.charAt(0)}
+                    </div>
+                    <div>
+                        <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                            {account.serviceName}
+                            {isMasterExpired && <AlertTriangle size={14} className="text-red-500" />}
+                        </h3>
+                        <p className="text-sm text-slate-400 font-mono tracking-wide flex items-center gap-1">
+                            {account.email}
+                        </p>
+                    </div>
+                </div>
+
+                <div className="flex items-center gap-4 w-full md:w-auto justify-between md:justify-end">
+                    <div className="flex flex-col items-end">
+                        <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Slots</span>
+                        <div className="flex items-baseline gap-1">
+                            <span className="text-white font-bold">{usedSlots}</span>
+                            <span className="text-slate-500 text-sm">/{account.totalSlots}</span>
+                        </div>
+                    </div>
+                    <div className="w-px h-8 bg-white/10 hidden md:block"></div>
+                    <div className="flex flex-col items-end min-w-[80px]">
+                        <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Expires</span>
+                        <span className={`text-sm font-medium ${isMasterExpired ? 'text-red-400' : 'text-slate-300'}`}>
+                            {account.expiryDate}
+                        </span>
+                    </div>
+                    <div className={`p-2 rounded-full transition-transform duration-300 ${isExpanded ? 'rotate-180 bg-white/10' : ''}`}>
+                        <ChevronDown size={20} className="text-slate-400"/>
+                    </div>
+                </div>
+             </div>
+
+             {/* Expanded Content */}
+             {isExpanded && (
+                 <div className="bg-black/20 border-t border-white/5 p-4 md:p-6 animate-in fade-in slide-in-from-top-2">
+                     <div className="flex justify-between items-center mb-4">
+                        <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-widest">
+                            <Lock size={12}/> Password: <span className="text-slate-300 normal-case select-all">{account.password || '••••••'}</span>
+                        </div>
+                        <button onClick={(e) => { e.stopPropagation(); onDelete(); }} className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1 px-3 py-1.5 rounded-lg hover:bg-red-500/10 transition-colors">
+                            <Trash2 size={12}/> Delete Account
+                        </button>
+                     </div>
+
+                     <div className="space-y-3">
+                         {account.slots.map((slot, idx) => {
+                             const slotClient = clients.find(c => c.id === slot.clientId);
+                             const isSlotExpired = slot.status === 'expired';
+                             
+                             return (
+                                 <div key={slot.id} className="glass-panel p-3 rounded-xl flex flex-col md:flex-row md:items-center gap-3 md:gap-4 group/slot hover:bg-white/5 transition-colors">
+                                     <div className="flex items-center gap-3 w-full md:w-1/4">
+                                         <div className="text-xs font-mono text-slate-600 w-6">#{idx+1}</div>
+                                         {slot.clientId ? (
+                                             <div className="flex-1 flex items-center justify-between bg-white/5 rounded-lg px-3 py-2 border border-white/5">
+                                                 <span className="text-sm font-medium text-white truncate">{slotClient?.name || 'Unknown'}</span>
+                                                 <button onClick={() => onUpdateSlot(slot.id, { clientId: null })} className="text-slate-500 hover:text-red-400 transition-colors"><Trash2 size={14}/></button>
+                                             </div>
+                                         ) : (
+                                             <div className="flex-1 relative">
+                                                <UserPlus size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"/>
+                                                <select 
+                                                    className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 pl-9 text-sm text-slate-400 outline-none focus:border-primary focus:text-white transition-colors appearance-none cursor-pointer"
+                                                    onChange={(e) => e.target.value && onUpdateSlot(slot.id, { clientId: e.target.value, status: 'active', expiryDate: new Date().toISOString().split('T')[0] })}
+                                                    value=""
+                                                >
+                                                    <option value="">Assign Client</option>
+                                                    {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                                </select>
+                                             </div>
+                                         )}
+                                     </div>
+
+                                     {slot.clientId && (
+                                         <>
+                                            <div className="w-full md:w-1/4">
+                                                <input 
+                                                    type="date" 
+                                                    value={slot.expiryDate || ''}
+                                                    onChange={e => onUpdateSlot(slot.id, { expiryDate: e.target.value })}
+                                                    className={`w-full bg-black/40 border rounded-lg px-3 py-2 text-sm outline-none transition-colors ${
+                                                        isSlotExpired ? 'border-red-500/50 text-red-400' : 'border-white/10 text-slate-300 focus:border-primary'
+                                                    }`}
+                                                />
+                                            </div>
+                                            
+                                            <div className="flex items-center gap-2 w-full md:w-auto ml-auto">
+                                                <button 
+                                                    onClick={() => onQuickRenew(slot.id, 1)}
+                                                    className="px-3 py-2 rounded-lg bg-white/5 hover:bg-primary/20 hover:text-primary text-xs font-bold text-slate-400 transition-colors border border-white/5"
+                                                >
+                                                    +1 MO
+                                                </button>
+                                                <button 
+                                                    onClick={() => slotClient && onDraftMsg(slotClient, account.expiryDate!)}
+                                                    className="p-2 rounded-lg bg-green-500/10 text-green-400 hover:bg-green-500/20 border border-green-500/10 transition-colors"
+                                                    title="WhatsApp Message"
+                                                >
+                                                    <MessageSquare size={16}/>
+                                                </button>
+                                            </div>
+                                         </>
+                                     )}
+                                 </div>
+                             )
+                         })}
+                     </div>
+                 </div>
+             )}
+        </div>
+    )
+};
 
 const AccountList: React.FC<Props> = ({ accounts, clients, onUpdateAccount, onDeleteAccount }) => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -25,21 +163,17 @@ const AccountList: React.FC<Props> = ({ accounts, clients, onUpdateAccount, onDe
   const updateSlot = (accountId: string, slotId: string, updates: Partial<Slot>) => {
     const account = accounts.find(a => a.id === accountId);
     if (!account) return;
-
     const newSlots = account.slots.map(s => {
         if (s.id === slotId) {
             const updatedSlot = { ...s, ...updates };
-            // Auto update status based on new date
             if (updates.expiryDate) {
                 const now = new Date();
                 const exp = new Date(updates.expiryDate);
                 const threeDays = new Date(); threeDays.setDate(now.getDate() + 3);
-                
                 if (exp < now) updatedSlot.status = 'expired';
                 else if (exp <= threeDays) updatedSlot.status = 'expiring_soon';
                 else updatedSlot.status = 'active';
             }
-            // Auto update status if client removed
             if (updates.clientId === null) {
                 updatedSlot.status = 'empty';
                 updatedSlot.expiryDate = null;
@@ -48,7 +182,6 @@ const AccountList: React.FC<Props> = ({ accounts, clients, onUpdateAccount, onDe
         }
         return s;
     });
-
     onUpdateAccount({ ...account, slots: newSlots });
   };
 
@@ -56,175 +189,68 @@ const AccountList: React.FC<Props> = ({ accounts, clients, onUpdateAccount, onDe
     const account = accounts.find(a => a.id === accountId);
     const slot = account?.slots.find(s => s.id === slotId);
     if (!slot) return;
-
     const baseDate = slot.expiryDate ? new Date(slot.expiryDate) : new Date();
     const today = new Date();
-    const start = baseDate < today ? today : baseDate; // Renew from today if expired
+    const start = baseDate < today ? today : baseDate;
     start.setMonth(start.getMonth() + months);
-    
     updateSlot(accountId, slotId, { expiryDate: start.toISOString().split('T')[0] });
   };
 
-  const handleMessage = async (client: Client, service: string, expiry: string) => {
-    const msg = await draftRenewalMessage(client, service, expiry);
+  const handleMessage = async (client: Client, expiry: string) => {
+    const msg = await draftRenewalMessage(client, "Service", expiry);
     setDraftingMsg(msg);
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex gap-4 mb-6">
-        <input 
+    <div className="space-y-6 pb-20 md:pb-0">
+      <div className="relative">
+         <input 
             type="text" 
-            placeholder="Search accounts..." 
-            className="flex-1 bg-slate-800 border border-slate-700 text-white px-4 py-2 rounded-lg focus:ring-2 focus:ring-primary outline-none"
+            placeholder="Search accounts by name, email..." 
+            className="w-full bg-white/5 border border-white/10 rounded-xl px-5 py-4 text-white placeholder:text-slate-500 focus:ring-2 focus:ring-primary/50 focus:border-primary/50 outline-none backdrop-blur-sm transition-all"
             value={filter}
             onChange={e => setFilter(e.target.value)}
         />
       </div>
 
-      {filteredAccounts.map(account => {
-        const usedSlots = account.slots.filter(s => s.status !== 'empty').length;
-        const isMasterExpired = account.status === 'expired';
-
-        return (
-            <div key={account.id} className={`bg-slate-800 border ${isMasterExpired ? 'border-red-500/50' : 'border-slate-700'} rounded-2xl overflow-hidden transition-all`}>
-                {/* Master Header */}
-                <div className="p-4 flex flex-col md:flex-row items-center justify-between gap-4 cursor-pointer hover:bg-slate-700/30" onClick={() => toggleExpand(account.id)}>
-                    <div className="flex items-center gap-4 w-full md:w-auto">
-                        <div className={`p-3 rounded-xl ${isMasterExpired ? 'bg-red-500/20 text-red-400' : 'bg-primary/20 text-primary'}`}>
-                            {isMasterExpired ? <AlertTriangle size={24}/> : <ShieldCheck size={24}/>}
-                        </div>
-                        <div>
-                            <h3 className="font-bold text-lg text-white">{account.serviceName}</h3>
-                            <div className="flex items-center gap-2 text-sm text-slate-400">
-                                <span className="font-mono">{account.email}</span>
-                                {isMasterExpired && <span className="text-red-400 font-bold px-2 py-0.5 bg-red-500/10 rounded text-[10px]">MASTER EXPIRED</span>}
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="flex items-center gap-6 w-full md:w-auto justify-between md:justify-end">
-                         <div className="text-right">
-                             <div className="text-xs text-slate-500 uppercase font-bold">Slots</div>
-                             <div className="text-white font-mono">{usedSlots} / {account.totalSlots}</div>
-                         </div>
-                         <div className="text-right">
-                             <div className="text-xs text-slate-500 uppercase font-bold">Master Expiry</div>
-                             <div className={`font-mono ${isMasterExpired ? 'text-red-400' : 'text-slate-300'}`}>{account.expiryDate}</div>
-                         </div>
-                         <div className="p-2 bg-slate-700 rounded-full text-slate-400">
-                             {expandedId === account.id ? <ChevronUp size={20}/> : <ChevronDown size={20}/>}
-                         </div>
-                    </div>
-                </div>
-
-                {/* Expanded Slots Area */}
-                {expandedId === account.id && (
-                    <div className="border-t border-slate-700 bg-slate-900/30 p-4">
-                        <div className="flex justify-between items-center mb-4">
-                            <h4 className="text-sm font-bold text-slate-400 uppercase tracking-wider">Client Slots Management</h4>
-                            <button onClick={() => onDeleteAccount(account.id)} className="text-xs text-red-400 hover:underline flex items-center gap-1">
-                                <Trash2 size={12}/> Delete Master Account
-                            </button>
-                        </div>
-                        
-                        <div className="space-y-2">
-                            {account.slots.map((slot, idx) => {
-                                const slotClient = clients.find(c => c.id === slot.clientId);
-                                
-                                return (
-                                    <div key={slot.id} className="grid grid-cols-1 md:grid-cols-12 gap-2 items-center bg-slate-800/50 p-3 rounded-lg border border-slate-700/50 hover:border-slate-600">
-                                        <div className="col-span-1 text-center text-slate-500 font-mono text-xs">#{idx+1}</div>
-                                        
-                                        {/* Client Selector */}
-                                        <div className="col-span-11 md:col-span-4 relative">
-                                            {slot.clientId ? (
-                                                <div className="flex justify-between items-center bg-slate-700 px-3 py-2 rounded text-white text-sm">
-                                                    <span className="font-medium">{slotClient?.name || 'Unknown Client'}</span>
-                                                    <button onClick={() => updateSlot(account.id, slot.id, { clientId: null })} className="text-slate-400 hover:text-white">
-                                                        <Trash2 size={14}/>
-                                                    </button>
-                                                </div>
-                                            ) : (
-                                                <div className="relative">
-                                                     <UserPlus size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"/>
-                                                     <select 
-                                                        className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 pl-9 text-sm text-slate-300 outline-none focus:border-primary appearance-none"
-                                                        onChange={(e) => {
-                                                            if(e.target.value) updateSlot(account.id, slot.id, { clientId: e.target.value, status: 'active', expiryDate: new Date().toISOString().split('T')[0] })
-                                                        }}
-                                                        value=""
-                                                     >
-                                                         <option value="">+ Assign Client</option>
-                                                         {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                                                     </select>
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        {/* Expiry & Status */}
-                                        <div className="col-span-6 md:col-span-3">
-                                            {slot.clientId && (
-                                                <input 
-                                                    type="date" 
-                                                    value={slot.expiryDate || ''}
-                                                    onChange={e => updateSlot(account.id, slot.id, { expiryDate: e.target.value })}
-                                                    className={`w-full bg-slate-900 border rounded px-3 py-2 text-sm outline-none ${
-                                                        slot.status === 'expired' ? 'border-red-500 text-red-400' : 
-                                                        slot.status === 'expiring_soon' ? 'border-yellow-500 text-yellow-400' : 
-                                                        'border-slate-600 text-white'
-                                                    }`}
-                                                />
-                                            )}
-                                        </div>
-
-                                        {/* Actions */}
-                                        <div className="col-span-6 md:col-span-4 flex items-center justify-end gap-2">
-                                            {slot.clientId && (
-                                                <>
-                                                    <button 
-                                                        onClick={() => handleQuickRenewSlot(account.id, slot.id, 1)}
-                                                        className="p-2 bg-slate-700 hover:bg-slate-600 text-white rounded" 
-                                                        title="+1 Month"
-                                                    >
-                                                        <span className="text-[10px] font-bold">+1M</span>
-                                                    </button>
-                                                    <button 
-                                                        onClick={() => slotClient && handleMessage(slotClient, account.serviceName, slot.expiryDate!)}
-                                                        className="p-2 bg-green-600/20 text-green-400 hover:bg-green-600/30 rounded"
-                                                        title="Message"
-                                                    >
-                                                        <MessageSquare size={16}/>
-                                                    </button>
-                                                </>
-                                            )}
-                                        </div>
-                                    </div>
-                                )
-                            })}
-                        </div>
-                    </div>
-                )}
-            </div>
-        )
-      })}
+      <div className="space-y-4">
+        {filteredAccounts.map(account => (
+            <AccountCard 
+                key={account.id}
+                account={account}
+                clients={clients}
+                isExpanded={expandedId === account.id}
+                onToggle={() => toggleExpand(account.id)}
+                onDelete={() => onDeleteAccount(account.id)}
+                onUpdateSlot={(sId, up) => updateSlot(account.id, sId, up)}
+                onDraftMsg={(client, date) => handleMessage(client, date)}
+                onQuickRenew={(sId, m) => handleQuickRenewSlot(account.id, sId, m)}
+            />
+        ))}
+      </div>
       
-      {filteredAccounts.length === 0 && <div className="text-center text-slate-500 py-10">No accounts found.</div>}
+      {filteredAccounts.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-20 opacity-50">
+             <div className="text-6xl mb-4">🔭</div>
+             <p className="text-slate-400">No accounts found.</p>
+          </div>
+      )}
 
       {/* Draft Message Modal */}
       {draftingMsg && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-            <div className="bg-slate-800 p-6 rounded-2xl max-w-lg w-full border border-slate-700">
-                <h3 className="text-white font-bold mb-4">Renewal Message</h3>
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-[100] p-4">
+            <div className="bg-[#0f172a] border border-white/10 p-6 rounded-3xl max-w-md w-full shadow-2xl relative overflow-hidden">
+                <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary to-accent"></div>
+                <h3 className="text-white font-bold mb-4 text-lg">Send Reminder</h3>
                 <textarea 
-                    className="w-full h-32 bg-slate-900 text-white p-3 rounded-lg border border-slate-600 mb-4"
+                    className="w-full h-40 bg-black/30 text-slate-200 p-4 rounded-xl border border-white/10 mb-6 focus:border-primary outline-none resize-none font-sans"
                     readOnly
                     value={draftingMsg}
                 />
-                <div className="flex justify-end gap-2">
-                    <button onClick={() => setDraftingMsg(null)} className="px-4 py-2 text-slate-400">Close</button>
-                    <button onClick={() => navigator.clipboard.writeText(draftingMsg)} className="px-4 py-2 bg-primary text-white rounded-lg flex items-center gap-2">
-                        <Copy size={16}/> Copy
+                <div className="flex gap-3">
+                    <button onClick={() => setDraftingMsg(null)} className="flex-1 py-3 text-slate-400 hover:bg-white/5 rounded-xl transition-colors">Cancel</button>
+                    <button onClick={() => navigator.clipboard.writeText(draftingMsg)} className="flex-1 py-3 bg-gradient-to-r from-primary to-accent text-white rounded-xl font-bold shadow-lg shadow-primary/20 active:scale-95 transition-transform flex items-center justify-center gap-2">
+                        <Copy size={18}/> Copy Text
                     </button>
                 </div>
             </div>
