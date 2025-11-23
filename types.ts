@@ -5,6 +5,12 @@ export interface Client {
   notes?: string;
 }
 
+export interface ServiceDef {
+  id: string;
+  name: string;
+  defaultSlots: number;
+}
+
 export interface Slot {
   id: string;
   clientId: string | null; // null if empty

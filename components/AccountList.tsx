@@ -1,14 +1,85 @@
-import React, { useState } from 'react';
-import { Account, Client, Slot } from '../types';
-import { Trash2, MessageSquare, ChevronDown, ChevronUp, UserPlus, AlertTriangle, ShieldCheck, Copy, Lock, Calendar } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Account, Client, Slot, ServiceDef } from '../types';
+import { Trash2, MessageSquare, ChevronDown, UserPlus, AlertTriangle, Copy, Lock, Search, X } from 'lucide-react';
 import { draftRenewalMessage } from '../services/geminiService';
 
 interface Props {
   accounts: Account[];
   clients: Client[];
+  services: ServiceDef[]; // Passed for potential future filtering or edit usage
   onUpdateAccount: (account: Account) => void;
   onDeleteAccount: (id: string) => void;
 }
+
+const ClientSelect = ({ clients, onSelect }: { clients: Client[], onSelect: (id: string) => void }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const [search, setSearch] = useState('');
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    const filtered = clients.filter(c => c.name.toLowerCase().includes(search.toLowerCase()));
+
+    useEffect(() => {
+        if (isOpen && inputRef.current) {
+            inputRef.current.focus();
+        }
+    }, [isOpen]);
+
+    if (!isOpen) {
+        return (
+            <button 
+                onClick={() => setIsOpen(true)}
+                className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-400 hover:text-white hover:border-white/20 transition-colors flex items-center gap-2 group"
+            >
+                <UserPlus size={14} className="group-hover:text-primary transition-colors" />
+                <span>Assign Client</span>
+            </button>
+        );
+    }
+
+    return (
+        <div className="relative w-full">
+            <div className="flex items-center bg-black/40 border border-primary/50 rounded-lg px-2 py-1.5 focus-within:ring-1 focus-within:ring-primary/50">
+                <Search size={14} className="text-primary mr-2 shrink-0"/>
+                <input
+                    ref={inputRef}
+                    type="text"
+                    className="bg-transparent border-none outline-none text-sm text-white w-full placeholder:text-slate-600"
+                    placeholder="Search name..."
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                    onBlur={() => setTimeout(() => setIsOpen(false), 200)}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Escape') setIsOpen(false);
+                    }}
+                />
+                <button onMouseDown={() => setIsOpen(false)} className="text-slate-500 hover:text-white ml-1">
+                    <X size={14} />
+                </button>
+            </div>
+            
+            <div className="absolute top-full left-0 w-full mt-1 bg-[#1e293b] border border-white/10 rounded-lg shadow-xl z-50 max-h-48 overflow-y-auto custom-scrollbar">
+                {filtered.map(c => (
+                    <button
+                        key={c.id}
+                        onMouseDown={(e) => {
+                            e.preventDefault(); 
+                            onSelect(c.id);
+                            setIsOpen(false);
+                            setSearch('');
+                        }}
+                        className="w-full text-left px-3 py-2 text-sm text-slate-300 hover:bg-primary/20 hover:text-white border-b border-white/5 last:border-0 flex justify-between items-center"
+                    >
+                        <span>{c.name}</span>
+                        {c.phone && <span className="text-[10px] text-slate-500 font-mono">{c.phone}</span>}
+                    </button>
+                ))}
+                {filtered.length === 0 && (
+                    <div className="px-3 py-2 text-xs text-slate-500">No clients found</div>
+                )}
+            </div>
+        </div>
+    );
+};
 
 const AccountCard: React.FC<{
   account: Account;
@@ -94,16 +165,15 @@ const AccountCard: React.FC<{
                                                  <button onClick={() => onUpdateSlot(slot.id, { clientId: null })} className="text-slate-500 hover:text-red-400 transition-colors"><Trash2 size={14}/></button>
                                              </div>
                                          ) : (
-                                             <div className="flex-1 relative">
-                                                <UserPlus size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"/>
-                                                <select 
-                                                    className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 pl-9 text-sm text-slate-400 outline-none focus:border-primary focus:text-white transition-colors appearance-none cursor-pointer"
-                                                    onChange={(e) => e.target.value && onUpdateSlot(slot.id, { clientId: e.target.value, status: 'active', expiryDate: new Date().toISOString().split('T')[0] })}
-                                                    value=""
-                                                >
-                                                    <option value="">Assign Client</option>
-                                                    {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                                                </select>
+                                             <div className="flex-1">
+                                                 <ClientSelect 
+                                                    clients={clients} 
+                                                    onSelect={(clientId) => onUpdateSlot(slot.id, { 
+                                                        clientId, 
+                                                        status: 'active', 
+                                                        expiryDate: new Date().toISOString().split('T')[0] 
+                                                    })} 
+                                                 />
                                              </div>
                                          )}
                                      </div>
@@ -148,7 +218,7 @@ const AccountCard: React.FC<{
     )
 };
 
-const AccountList: React.FC<Props> = ({ accounts, clients, onUpdateAccount, onDeleteAccount }) => {
+const AccountList: React.FC<Props> = ({ accounts, clients, services, onUpdateAccount, onDeleteAccount }) => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
   const [draftingMsg, setDraftingMsg] = useState<string | null>(null);
@@ -204,10 +274,11 @@ const AccountList: React.FC<Props> = ({ accounts, clients, onUpdateAccount, onDe
   return (
     <div className="space-y-6 pb-20 md:pb-0">
       <div className="relative">
+         <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-500" size={20} />
          <input 
             type="text" 
             placeholder="Search accounts by name, email..." 
-            className="w-full bg-white/5 border border-white/10 rounded-xl px-5 py-4 text-white placeholder:text-slate-500 focus:ring-2 focus:ring-primary/50 focus:border-primary/50 outline-none backdrop-blur-sm transition-all"
+            className="w-full bg-white/5 border border-white/10 rounded-xl px-5 py-4 pl-14 text-white placeholder:text-slate-500 focus:ring-2 focus:ring-primary/50 focus:border-primary/50 outline-none backdrop-blur-sm transition-all"
             value={filter}
             onChange={e => setFilter(e.target.value)}
         />

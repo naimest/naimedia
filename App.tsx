@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ViewState, Account, Client, TelegramConfig, DashboardStats } from './types';
+import { ViewState, Account, Client, TelegramConfig, DashboardStats, ServiceDef } from './types';
 import Dashboard from './components/Dashboard';
 import AccountList from './components/AccountList';
 import SmartAdd from './components/SmartAdd';
@@ -13,6 +13,7 @@ const App = () => {
   
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  const [services, setServices] = useState<ServiceDef[]>([]);
   
   const [telegramConfig, setTelegramConfig] = useState<TelegramConfig>({ botToken: '', chatId: '' });
   const [notificationStatus, setNotificationStatus] = useState<'idle' | 'sending' | 'done'>('idle');
@@ -21,10 +22,12 @@ const App = () => {
   useEffect(() => {
     const savedAccounts = localStorage.getItem('submanager_accounts_v2');
     const savedClients = localStorage.getItem('submanager_clients_v2');
+    const savedServices = localStorage.getItem('submanager_services_v1');
     const savedConfig = localStorage.getItem('submanager_telegram');
     
     if (savedAccounts) setAccounts(JSON.parse(savedAccounts));
     if (savedClients) setClients(JSON.parse(savedClients));
+    if (savedServices) setServices(JSON.parse(savedServices));
     if (savedConfig) setTelegramConfig(JSON.parse(savedConfig));
   }, []);
 
@@ -36,6 +39,10 @@ const App = () => {
   useEffect(() => {
     localStorage.setItem('submanager_clients_v2', JSON.stringify(clients));
   }, [clients]);
+
+  useEffect(() => {
+    localStorage.setItem('submanager_services_v1', JSON.stringify(services));
+  }, [services]);
 
   useEffect(() => {
     localStorage.setItem('submanager_telegram', JSON.stringify(telegramConfig));
@@ -68,6 +75,9 @@ const App = () => {
   const handleUpdateClient = (client: Client) => setClients(clients.map(c => c.id === client.id ? client : c));
   const handleDeleteClient = (id: string) => setClients(clients.filter(c => c.id !== id));
 
+  const handleAddService = (service: ServiceDef) => setServices([...services, service]);
+  const handleDeleteService = (id: string) => setServices(services.filter(s => s.id !== id));
+
   const handleAddAccount = (account: Account) => {
       setAccounts([...accounts, account]);
       setView(ViewState.ACCOUNTS);
@@ -92,8 +102,37 @@ const App = () => {
           return;
       }
       setNotificationStatus('sending');
-      // ... logic remains same ...
-      await sendTelegramMessage(telegramConfig, "🔔 Manual Check: System Healthy"); 
+
+      const expiringMasters = processedAccounts.filter(a => a.status === 'expired' || a.status === 'expiring_soon');
+      const expiringSlots = processedAccounts.flatMap(a => 
+          a.slots
+            .filter(s => s.status === 'expired' || s.status === 'expiring_soon')
+            .map(s => ({ ...s, serviceName: a.serviceName }))
+      );
+
+      let message = `📊 *SubManager Report*\n\n`;
+      
+      if (expiringMasters.length === 0 && expiringSlots.length === 0) {
+          message += `✅ *All Systems Healthy*\nNo immediate actions required.`;
+      } else {
+          if (expiringMasters.length > 0) {
+              message += `🚨 *Expiring Master Accounts:*\n`;
+              expiringMasters.forEach(m => {
+                  message += `- ${m.serviceName} (${m.email}): ${m.expiryDate}\n`;
+              });
+              message += `\n`;
+          }
+
+          if (expiringSlots.length > 0) {
+              message += `⚠️ *Expiring Client Slots:*\n`;
+              expiringSlots.forEach(s => {
+                  const clientName = clients.find(c => c.id === s.clientId)?.name || 'Unknown';
+                  message += `- ${s.serviceName} (Slot): ${clientName} - ${s.expiryDate || 'N/A'}\n`;
+              });
+          }
+      }
+
+      await sendTelegramMessage(telegramConfig, message);
       setNotificationStatus('done');
       setTimeout(() => setNotificationStatus('idle'), 3000);
   };
@@ -117,7 +156,7 @@ const App = () => {
         <nav className="px-4 space-y-2 mt-8 flex-1">
           {[
             { id: ViewState.DASHBOARD, icon: LayoutGrid, label: 'Overview' },
-            { id: ViewState.CLIENTS, icon: Users, label: 'Clients' },
+            { id: ViewState.CLIENTS, icon: Users, label: 'Clients & Services' },
             { id: ViewState.ACCOUNTS, icon: List, label: 'Accounts' },
             { id: ViewState.SMART_ADD, icon: PlusCircle, label: 'Add New' },
             { id: ViewState.SETTINGS, icon: Settings, label: 'Settings' },
@@ -170,20 +209,24 @@ const App = () => {
             {view === ViewState.CLIENTS && (
                 <ClientList 
                     clients={clients} 
+                    services={services}
                     onAdd={handleAddClient} 
                     onUpdate={handleUpdateClient} 
                     onDelete={handleDeleteClient}
+                    onAddService={handleAddService}
+                    onDeleteService={handleDeleteService}
                 />
             )}
             {view === ViewState.ACCOUNTS && (
                 <AccountList 
                 accounts={processedAccounts} 
                 clients={clients}
+                services={services}
                 onUpdateAccount={handleUpdateAccount}
                 onDeleteAccount={handleDeleteAccount}
                 />
             )}
-            {view === ViewState.SMART_ADD && <SmartAdd onAddAccount={handleAddAccount} />}
+            {view === ViewState.SMART_ADD && <SmartAdd services={services} onAddAccount={handleAddAccount} />}
             {view === ViewState.SETTINGS && <TelegramSettings config={telegramConfig} onSave={setTelegramConfig} />}
           </div>
         </div>

@@ -1,16 +1,17 @@
 import React, { useState } from 'react';
 import { parseMasterAccountFromText } from '../services/geminiService';
-import { Account, Slot } from '../types';
-import { Sparkles, Plus, Server, Shield, PenTool, Type } from 'lucide-react';
+import { Account, Slot, ServiceDef } from '../types';
+import { Sparkles, Server, Shield } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 
 interface SmartAddProps {
+  services: ServiceDef[];
   onAddAccount: (account: Account) => void;
 }
 
 type Mode = 'manual' | 'ai';
 
-const SmartAdd: React.FC<SmartAddProps> = ({ onAddAccount }) => {
+const SmartAdd: React.FC<SmartAddProps> = ({ services, onAddAccount }) => {
   const [mode, setMode] = useState<Mode>('manual');
   
   // AI State
@@ -20,6 +21,7 @@ const SmartAdd: React.FC<SmartAddProps> = ({ onAddAccount }) => {
 
   // Manual State
   const [serviceName, setServiceName] = useState('');
+  const [customService, setCustomService] = useState(''); // If user types a new one
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [expiryDate, setExpiryDate] = useState(new Date().toISOString().split('T')[0]);
@@ -33,6 +35,19 @@ const SmartAdd: React.FC<SmartAddProps> = ({ onAddAccount }) => {
         expiryDate: null,
         status: 'empty'
     }));
+  };
+
+  const handleServiceSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
+      const val = e.target.value;
+      if (val === 'custom') {
+          setServiceName('custom');
+          setCustomService('');
+          setTotalSlots(5);
+      } else {
+          setServiceName(val);
+          const svc = services.find(s => s.name === val);
+          if (svc) setTotalSlots(svc.defaultSlots);
+      }
   };
 
   const handleAIParse = async () => {
@@ -65,14 +80,16 @@ const SmartAdd: React.FC<SmartAddProps> = ({ onAddAccount }) => {
   };
 
   const handleManualAdd = () => {
-    if (!serviceName || !email) {
+    const finalServiceName = serviceName === 'custom' ? customService : serviceName;
+
+    if (!finalServiceName || !email) {
         setError("Service Name and Email are required.");
         return;
     }
 
     const newAccount: Account = {
         id: uuidv4(),
-        serviceName,
+        serviceName: finalServiceName,
         email,
         password,
         expiryDate,
@@ -86,6 +103,7 @@ const SmartAdd: React.FC<SmartAddProps> = ({ onAddAccount }) => {
     
     // Reset
     setServiceName('');
+    setCustomService('');
     setEmail('');
     setPassword('');
     setNotes('');
@@ -127,12 +145,27 @@ const SmartAdd: React.FC<SmartAddProps> = ({ onAddAccount }) => {
             <div className="space-y-5">
                 <div>
                     <label className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 block">Service</label>
-                    <input 
-                        type="text" 
-                        value={serviceName} onChange={e => setServiceName(e.target.value)}
-                        placeholder="Netflix, Spotify..."
-                        className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary focus:bg-black/40 outline-none transition-all"
-                    />
+                    <select 
+                        value={serviceName} 
+                        onChange={handleServiceSelect}
+                        className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary focus:bg-black/40 outline-none transition-all mb-2 appearance-none"
+                    >
+                        <option value="" disabled>Select a service...</option>
+                        {services.map(s => (
+                            <option key={s.id} value={s.name}>{s.name}</option>
+                        ))}
+                        <option value="custom">+ Custom Service</option>
+                    </select>
+                    
+                    {serviceName === 'custom' && (
+                        <input 
+                            type="text" 
+                            value={customService} onChange={e => setCustomService(e.target.value)}
+                            placeholder="Enter Service Name..."
+                            className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary focus:bg-black/40 outline-none transition-all animate-in fade-in"
+                            autoFocus
+                        />
+                    )}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
