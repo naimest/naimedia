@@ -7,8 +7,9 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     define: {
-      // Polyfill process.env.API_KEY for the frontend
       'process.env.API_KEY': JSON.stringify(env.API_KEY),
+      // We don't need to manually define VITE_ variables, Vite does it automatically
+      // But we can ensure they are loaded if needed
     },
   };
 });
